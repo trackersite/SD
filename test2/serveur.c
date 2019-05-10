@@ -16,29 +16,29 @@ int main (int argc, char *argv[]) {
   int                   datalen;
   char                  databuf[1024];
 
-    /*
-     * Create a datagram socket on which to receive.
-     */
-    sd = socket(AF_INET, SOCK_DGRAM, 0);
-    if (sd < 0) {
-      perror("opening datagram socket");
+  /*
+   * Create a datagram socket on which to receive.
+   */
+  sd = socket(AF_INET, SOCK_DGRAM, 0);
+  if (sd < 0) {
+    perror("opening datagram socket");
+    exit(1);
+  }
+
+  /*
+   * Enable SO_REUSEADDR to allow multiple instances of this
+   * application to receive copies of the multicast datagrams.
+   */
+  {
+    int reuse=1;
+
+    if (setsockopt(sd, SOL_SOCKET, SO_REUSEADDR,
+                   (char *)&reuse, sizeof(reuse)) < 0) {
+      perror("setting SO_REUSEADDR");
+      close(sd);
       exit(1);
     }
-
-    /*
-     * Enable SO_REUSEADDR to allow multiple instances of this
-     * application to receive copies of the multicast datagrams.
-     */
-    {
-      int reuse=1;
-
-      if (setsockopt(sd, SOL_SOCKET, SO_REUSEADDR,
-                     (char *)&reuse, sizeof(reuse)) < 0) {
-        perror("setting SO_REUSEADDR");
-        close(sd);
-        exit(1);
-      }
-    }
+  }
 
     /*
      * Bind to the proper port number with the IP address
