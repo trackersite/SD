@@ -7,83 +7,45 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <netdb.h>
-#include <sys/types.h>
-#include <ifaddrs.h>
 #include "client.h"
 
 int main (int argc, char *argv[]) {
-  struct in_addr        localInterface;
-  struct sockaddr_in    groupSock;
-  int                   sd;
-  int                   datalen;  /* recuperer le nom du hote */
-  struct hostent        *host;
-  char                  databuf[1024];
+  struct sockaddr_in addr;
+  int addrlen, sock, cnt;
+  struct ip_mreq mreq;
+  char message[50];
 
-  printf("Veuiller saisir votre identifiant : ");
-  scanf("%s", databuf);
-  /*
-   * Create a datagram socket on which to send.
-   */
-  sd = socket(AF_INET, SOCK_DGRAM, 0);
-  if (sd < 0) {
-    perror("opening datagram socket");
+  strcpy(message, "salut");
+
+  /* set up socket */
+  sock = socket(AF_INET, SOCK_DGRAM, 0);
+  if (sock < 0) {
+    perror("socket");
     exit(1);
   }
 
-  /*
-   * Initialize the group sockaddr structure with a
-   * group address of 225.1.1.1 and port 5555.
-   */
-  memset((char *) &groupSock, 0, sizeof(groupSock));
-  groupSock.sin_family = AF_INET;
-  groupSock.sin_addr.s_addr = inet_addr(MULTICAST_GROUP);
-  groupSock.sin_port = htons(5555);
+  bzero((char *)&addr, sizeof(addr));
+  addr.sin_family = AF_INET;
+  addr.sin_addr.s_addr = htonl(INADDR_ANY);
+  addr.sin_port = htons(PORT_UDP);
+  addrlen = sizeof(addr);
 
-  /*
-   * Disable loopback so you do not receive your localSockown datagrams.
-   */
-  {
-    char loopch=0;
+  addr.sin_addr.s_addr = inet_addr(MULTICAST_GROUP);
 
-    if (setsockopt(sd, IPPROTO_IP, IP_MULTICAST_LOOP,
-                   (char *)&loopch, sizeof(loopch)) < 0) {
-      perror("setting IP_MULTICAST_LOOP:");
-      close(sd);
-      exit(1);
-    }
-  }
+	 printf("sending: %s\n", message);
+	 cnt = sendto(sock, message, sizeof(message), 0, (struct sockaddr *) &addr, addrlen);
+	 if (cnt < 0) {
+ 	    perror("sendto");
+	    exit(1);
+	}
 
-  /*
-   * Set local interface for outbound multicast datagrams.
-   * The IP address specified must be associated with a local,
-   * multicast-capable interface.
-   */
-  localInterface.s_addr = inet_addr(MULTICAST_IP);
-  if (setsockopt(sd, IPPROTO_IP, IP_MULTICAST_IF,
-                 (char *)&localInterface,
-                 sizeof(localInterface)) < 0) {
-    perror("setting local interface");
-    exit(1);
-  }
-
-  /*
-   * Send a message to the multicast group specified by the
-   * groupSock sockaddr structure.
-   */
-  if (sendto(sd, databuf, TAILLE_BUFFER, 0,
-             (struct sockaddr*)&groupSock,
-             sizeof(groupSock)) < 0)
-  {
-    perror("sending datagram message");
-  }
-
-  /*** TCP  ********************************************************/
-  /*                                                                   */
-  /* Component Name: TCPS                                              */
+  /*********************************************************************/
   /*                                                                   */
   /*                                                                   */
-  /* Copyright:    Licensed Materials - Property of LA FAC             */
-  /*** IBMCOPYR ********************************************************/
+  /*                          PARTIE TCP                               */
+  /*                                                                   */
+  /*                                                                   */
+  /*********************************************************************/
 
    char buf[12];              /* data buffer for sending & receiving */
    struct hostent *hostnm;    /* server host name information        */
@@ -108,7 +70,7 @@ int main (int argc, char *argv[]) {
     * The port must be put into network byte order.
     */
    server.sin_family      = AF_INET;
-   server.sin_port        = htons(PORT);
+   server.sin_port        = htons(PORT_TCP);
    server.sin_addr.s_addr = *((unsigned long *)hostnm->h_addr);
 
    /* Get a stream socket. */
@@ -119,7 +81,7 @@ int main (int argc, char *argv[]) {
 
    /* Connect to the server. */
    if (connect(s, (struct sockaddr *)&server, sizeof(server)) < 0) {
-       perror("Connect()");
+       perror("Connect() client");
        exit(4);
    }
 
