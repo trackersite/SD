@@ -17,6 +17,7 @@ int main (int argc, char *argv[]) {
   struct sockaddr_in    addr;
   struct hostent        *host;
   char                  name[256];
+  char                  reponse[TAILLE_BUFFER];
 
   /* ------------------------------------------------------------*/
   /*                                                             */
@@ -109,8 +110,25 @@ int main (int argc, char *argv[]) {
     /* code */
   }
 
+
+  /* TCP */
+  // connexion de la socket client locale à la socket coté serveur
+  if (connect(socketTCP,(struct sockaddr *)&addr, sizeof(struct sockaddr_in)) == -1) {
+    perror("erreur connexion serveur");
+    exit(1);
+  }
+
+  // connexion etablie, on envoie le message
+  write(socketTCP, databuf, strlen(databuf)+1);
+
+  // on attend la réponse du serveur
+  read(socketTCP, reponse, TAILLE_BUFFER);
+  printf("identifiant attribué : %s\n", reponse);
+
+
   close(socketUDP);
   close(socketTCP);
+  printf("Connection fermé...\n");
 
   return 0;
 }
