@@ -55,7 +55,6 @@ int main (int argc, char *argv[]) {
       exit(1);
     }
 
-
     /*
      * Join the multicast group 225.1.1.1 on the local 9.5.1.1
      * interface.  Note that this IP_ADD_MEMBERSHIP option must be
@@ -71,17 +70,21 @@ int main (int argc, char *argv[]) {
       exit(1);
     }
 
-    /*
-     * Read from the socket.
-     */
-    datalen = sizeof(databuf);
-    if (read(sd, databuf, datalen) < 0) {
-      perror("reading datagram message");
-      close(sd);
-      exit(1);
-    }
+ /*
+  * Read from the socket.
+  */
+  datalen = sizeof(databuf);
+  struct sockaddr_storage sender;
+  socklen_t sendsize = sizeof(sender);
+  bzero(&sender, sizeof(sender));
 
-    printf("Message from Multicast to TCP = %s\n", databuf);
+  recvfrom(sd, databuf, sizeof(databuf), 0, (struct sockaddr*)&sender, &sendsize);
+
+  /* Récuperer @IP du client de son paquet envoyé par le Multicast */
+  struct sockaddr_in *addr_in = (struct sockaddr_in *)&sender;
+  char *ss = inet_ntoa(addr_in->sin_addr);
+  printf("IP address: %s\n", ss);
+  printf("Message from Multicast to TCP = %s\n", databuf);
 
   /*** TCP  ********************************************************/
   /*                                                                   */
