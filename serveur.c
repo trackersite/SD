@@ -1,96 +1,114 @@
-#include <stdio.h>
-#include <string.h>   //strlen
-#include <stdlib.h>
-#include <errno.h>
-#include <unistd.h>   //close
-#include <arpa/inet.h>    //close
 #include <sys/types.h>
 #include <sys/socket.h>
-#include <netinet/in.h>
 #include <arpa/inet.h>
-#include <sys/time.h> //FD_SET, FD_ISSET, FD_ZERO macros
+#include <netinet/in.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <netdb.h>
 #include "serveur.h"
 
-#define TRUE   1
-#define FALSE  0
-#define MULTICAST_GROUP "226.1.2.3"
-#define MULTICAST_IP "127.0.1.1"
-
 int main (int argc, char *argv[]) {
-  struct clients_connectes *struct_clients[4];
+  struct sockaddr_in    localSock, groupSock;
+  struct in_addr        localInterface;
+  struct ip_mreq        group;
+  int                   socketUDP, socketTCP, socket_service;
+  char                  databuf[TAILLE_BUFFER];
+  struct hostent        *host;
+  char                  name[256];
+  struct sockaddr_in    tcp_addr;
+  char*                 donnees_multicast;
+  int                   identifiant = 0;
+  // adresse socket coté client
+  static struct sockaddr_in addr_client;
+  // adresse socket locale
+  static struct sockaddr_in addr_serveur;
 
-  int sock, status, socklen;
-  char buffer[TAILLE_BUFFER];
-  char *donnees_client[3];
-  struct sockaddr_in saddr;
-  struct ip_mreq imreq;
-  int identifier = 1;
-  char *client_adresse;
-  char *client_port;
-  char *client_pseudo;
-
-  // set content of struct saddr and imreq to zero
-  memset(&saddr, 0, sizeof(struct sockaddr_in));
-  memset(&imreq, 0, sizeof(struct ip_mreq));
-
-  // open a UDP socket
-  sock = socket(PF_INET, SOCK_DGRAM, IPPROTO_IP);
-  if ( sock < 0 )
-    perror("Error creating socket"), exit(0);
-
-  saddr.sin_family = PF_INET;
-  saddr.sin_port = htons(PORT); // listen on port 8080
-  saddr.sin_addr.s_addr = htonl(INADDR_ANY); // bind socket to any interface
-  status = bind(sock, (struct sockaddr *)&saddr, sizeof(struct sockaddr_in));
-
-  if ( status < 0 )
-    perror("Error binding socket to interface"), exit(0);
-
-  imreq.imr_multiaddr.s_addr = inet_addr(MULTICAST_GROUP);
-  imreq.imr_interface.s_addr = INADDR_ANY; // use DEFAULT interface
-
-  // JOIN multicast group on default interface
-  status = setsockopt(sock, IPPROTO_IP, IP_ADD_MEMBERSHIP,
-             (const void *)&imreq, sizeof(struct ip_mreq));
-
-  while (TRUE) {
-    socklen = sizeof(struct sockaddr_in);
-
-    // receive packet from socket
-    status = recvfrom(sock, buffer, TAILLE_BUFFER, 0,
-                      (struct sockaddr *)&saddr, &socklen);
-    printf(" Received : %s\n", buffer);
-
-    // affecter pseudo
-    client_pseudo = buffer;
-
-    memset(buffer, 0, TAILLE_BUFFER);
-    buffer[0] = identifier + '0';
-    identifier++;
-    printf("New connection, ip is : %s , port : %d \n" , inet_ntoa(saddr.sin_addr) , ntohs(saddr.sin_port));
-
-    sprintf(client_port, "%d", ntohs(saddr.sin_port));
-    // affectation
-    client_adresse = inet_ntoa(saddr.sin_addr);
-    donnees_client[0] = client_adresse;
-    donnees_client[1] = client_port;
-    donnees_client[2] = "Test";
-    // concatenation
-    strcat(*donnees_client, "\n");
-    strcat(*donnees_client, client_port);
-    strcat(*donnees_client, "\n");
-    strcat(*donnees_client, client_pseudo);
-
-    // envoie
-    sendto(sock, *donnees_client, TAILLE_BUFFER, 0,
-                        (struct sockaddr *)&saddr, socklen);
-
+  if (socketTCP = creerSocketTCP() <= 0) {
+    printf("Could not create TCP socket.\n");
+    perror("sock()");
+    exit(1);
   }
 
-  // shutdown socket
-  shutdown(sock, 2);
-  // close socket
-  close(sock);
+  /* recuperer le nom du hote */
+  gethostname(name, 1023);
+  host = gethostbyname(name);
 
-  return 0;
+  /* assigner port et l'adresse IP */
+  bzero((char *) &tcp_addr, sizeof(tcp_addr));
+  tcp_addr.sin_family = AF_INET;
+  tcp_addr.sin_port = htons(PORT);
+  memcpy(&tcp_addr.sin_addr.s_addr, host->h_addr, host->h_length);
+
+
+  /**************** PARTIE UDP ****************/
+
+  socketUDP = socket(AF_INET, SOCK_DGRAM, 0);
+  if (socketUDP < 0) {
+    perror("opening datagram socket");
+    exit(1);
+  }
+
+  /*
+   * Enable SO_REUSEADDR to allow multiple instances of this
+   * application to receive copies of the multicast datagrams.
+   */
+  {
+    int reuse=1;
+
+    if (setsockopt(socketUDP, SOL_SOCKET, SO_REUSEADDR,
+                   (char *)&reuse, sizeof(reuse)) < 0) {
+      perror("setting SO_REUSEADDR");
+      close(socketUDP);
+      exit(1);
+    }
+  }
+
+  /*
+   * Bind to the proper port number with the IP address
+   * specified as INADDR_ANY.
+   */
+  memset((char *) &localSock, 0, sizeof(localSock));
+  localSock.sin_family = AF_INET;
+  localSock.sin_port = htons(PORT);
+  localSock.sin_addr.s_addr  = INADDR_ANY;
+
+  if (bind(socketUDP, (struct sockaddr*)&localSock, sizeof(localSock))) {
+    perror("binding datagram socket");
+    close(socketUDP);
+    exit(1);
+  }
+
+  /*
+   * Join the multicast group 225.1.1.1 on the local 9.5.1.1
+   * interface.  Note that this IP_ADD_MEMBERSHIP option must be
+   * called for each local interface over which the multicast
+   * datagrams are to be received.
+   */
+  group.imr_multiaddr.s_addr = inet_addr(MULTICAST_GROUP);
+  group.imr_interface.s_addr = inet_addr(MULTICAST_IP);
+  if (setsockopt(socketUDP, IPPROTO_IP, IP_ADD_MEMBERSHIP,
+                 (char *)&group, sizeof(group)) < 0) {
+    perror("adding multicast group");
+    close(socketUDP);
+    exit(1);
+  }
+
+  /*
+   * Read from the socket.
+   */
+
+  while (1) {
+    if (read(socketUDP, databuf, sizeof(databuf)) < 0) {
+      perror("reading datagram message");
+      close(socketUDP);
+      exit(1);
+    } else {
+        printf("%s\n", databuf);
+    }
+  }
+
+  close(socketUDP);
+  close(socketTCP);
 }
