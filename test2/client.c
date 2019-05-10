@@ -21,7 +21,6 @@ int main (int argc, char *argv[]) {
 
   printf("Veuiller saisir votre identifiant : ");
   scanf("%s", databuf);
-
   /*
    * Create a datagram socket on which to send.
    */
