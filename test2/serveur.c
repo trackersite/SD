@@ -10,119 +10,72 @@
 #include "serveur.h"
 
 int main (int argc, char *argv[]) {
-  struct sockaddr_in    localSock;
-  struct ip_mreq        group;
-  int                   sd;
-  int                   datalen;
-  char                  databuf[1024];
+  struct sockaddr_in addr;
+  int addrlen, sock, cnt;
+  struct ip_mreq mreq;
+  char message[50];
+  /* TCP */
+  char buf[12];              /* buffer for sending & receiving data */
+  struct sockaddr_in client; /* client address information          */
+  struct sockaddr_in server; /* server address information          */
+  int s;                     /* socket for accepting connections    */
+  int ns;                    /* socket connected to client          */
+  int namelen;               /* length of client name               */
 
   /*
-   * Create a datagram socket on which to receive.
+   * Get a socket for accepting connections.
    */
-  sd = socket(AF_INET, SOCK_DGRAM, 0);
-  if (sd < 0) {
-    perror("opening datagram socket");
+  if ((s = socket(AF_INET, SOCK_STREAM, 0)) < 0)
+  {
+      perror("Socket()");
+      exit(2);
+  }
+
+  /*
+   * Bind the socket to the server address.
+   */
+  server.sin_family = AF_INET;
+  server.sin_port   = htons(PORT_TCP);
+  server.sin_addr.s_addr = INADDR_ANY;
+
+  if (bind(s, (struct sockaddr *)&server, sizeof(server)) < 0)
+  {
+      perror("Bind()");
+      exit(3);
+  }
+
+  /* set up socket */
+  sock = socket(AF_INET, SOCK_DGRAM, 0);
+  if (sock < 0) {
+    perror("socket");
     exit(1);
   }
 
-  /*
-   * Enable SO_REUSEADDR to allow multiple instances of this
-   * application to receive copies of the multicast datagrams.
-   */
-  {
-    int reuse=1;
+  bzero((char *)&addr, sizeof(addr));
+  addr.sin_family = AF_INET;
+  addr.sin_addr.s_addr = htonl(INADDR_ANY);
+  addr.sin_port = htons(PORT_UDP);
+  addrlen = sizeof(addr);
 
-    if (setsockopt(sd, SOL_SOCKET, SO_REUSEADDR,
-                   (char *)&reuse, sizeof(reuse)) < 0) {
-      perror("setting SO_REUSEADDR");
-      close(sd);
-      exit(1);
-    }
+  if (bind(sock, (struct sockaddr *) &addr, sizeof(addr)) < 0) {
+    perror("bind");
+	  exit(1);
   }
 
-    /*
-     * Bind to the proper port number with the IP address
-     * specified as INADDR_ANY.
-     */
-    memset((char *) &localSock, 0, sizeof(localSock));
-    localSock.sin_family = AF_INET;
-    localSock.sin_port = htons(5555);
-    localSock.sin_addr.s_addr  = INADDR_ANY;
+  mreq.imr_multiaddr.s_addr = inet_addr(MULTICAST_GROUP);
+  mreq.imr_interface.s_addr = htonl(INADDR_ANY);
 
-    if (bind(sd, (struct sockaddr*)&localSock, sizeof(localSock))) {
-      perror("binding datagram socket");
-      close(sd);
-      exit(1);
-    }
+  if (setsockopt(sock, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq)) < 0) {
+	 perror("setsockopt mreq");
+	 exit(1);
+  }
 
-    /*
-     * Join the multicast group 225.1.1.1 on the local 9.5.1.1
-     * interface.  Note that this IP_ADD_MEMBERSHIP option must be
-     * called for each local interface over which the multicast
-     * datagrams are to be received.
-     */
-    group.imr_multiaddr.s_addr = inet_addr(MULTICAST_GROUP);
-    group.imr_interface.s_addr = inet_addr(MULTICAST_IP);
-    if (setsockopt(sd, IPPROTO_IP, IP_ADD_MEMBERSHIP,
-                   (char *)&group, sizeof(group)) < 0) {
-      perror("adding multicast group");
-      close(sd);
-      exit(1);
-    }
-
- /*
-  * Read from the socket.
-  */
-  datalen = sizeof(databuf);
-  struct sockaddr_storage sender;
-  socklen_t sendsize = sizeof(sender);
-  bzero(&sender, sizeof(sender));
-
-  recvfrom(sd, databuf, sizeof(databuf), 0, (struct sockaddr*)&sender, &sendsize);
-
-  /* Récuperer @IP du client de son paquet envoyé par le Multicast */
-  struct sockaddr_in *addr_in = (struct sockaddr_in *)&sender;
-  char *ss = inet_ntoa(addr_in->sin_addr);
-  printf("IP address: %s\n", ss);
-  printf("Message from Multicast to TCP = %s\n", databuf);
-
-  /*** TCP  ********************************************************/
-  /*                                                                   */
-  /* Component Name: TCPS                                              */
-  /*                                                                   */
-  /*                                                                   */
-  /* Copyright:    Licensed Materials - Property of LA FAC             */
-  /*** IBMCOPYR ********************************************************/
-
-   unsigned short port;       /* port server binds to                */
-   char buf[12];              /* buffer for sending & receiving data */
-   struct sockaddr_in client; /* client address information          */
-   struct sockaddr_in server; /* server address information          */
-   int s;                     /* socket for accepting connections    */
-   int ns;                    /* socket connected to client          */
-   int namelen;               /* length of client name               */
-
-   /*
-    * Get a socket for accepting connections.
-    */
-   if ((s = socket(AF_INET, SOCK_STREAM, 0)) < 0)
-   {
-       perror("Socket()");
-       exit(2);
+  while (1) {
+ 	 if ((recvfrom(sock, message, sizeof(message), 0, (struct sockaddr *) &addr, &addrlen) < 0)) {
+     perror("recvfrom() server");
    }
+	 printf("%s: message to Multicast from Client = \"%s\"\n", inet_ntoa(addr.sin_addr), message);
 
-   /*
-    * Bind the socket to the server address.
-    */
-   server.sin_family = AF_INET;
-   server.sin_port   = htons(PORT);
-   server.sin_addr.s_addr = INADDR_ANY;
-
-   if (bind(s, (struct sockaddr *)&server, sizeof(server)) < 0)
-   {
-       perror("Bind()");
-       exit(3);
-   }
 
    /*
     * Listen for connections. Specify the backlog as 1.
@@ -162,6 +115,16 @@ int main (int argc, char *argv[]) {
        perror("Send()");
        exit(7);
    }
+
+  }
+
+  /*********************************************************************/
+  /*                                                                   */
+  /*                                                                   */
+  /*                          PARTIE TCP                               */
+  /*                                                                   */
+  /*                                                                   */
+  /*********************************************************************/
 
    close(ns);
    close(s);
