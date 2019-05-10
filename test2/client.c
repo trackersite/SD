@@ -7,15 +7,17 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <netdb.h>
+#include <sys/types.h>
+#include <ifaddrs.h>
 #include "client.h"
 
 int main (int argc, char *argv[]) {
   struct in_addr        localInterface;
   struct sockaddr_in    groupSock;
   int                   sd;
-  int                   datalen;
+  int                   datalen;  /* recuperer le nom du hote */
+  struct hostent        *host;
   char                  databuf[1024];
-  char                  hostbuffer[256];
 
   printf("Veuiller saisir votre identifiant : ");
   scanf("%s", databuf);
@@ -39,7 +41,7 @@ int main (int argc, char *argv[]) {
   groupSock.sin_port = htons(5555);
 
   /*
-   * Disable loopback so you do not receive your own datagrams.
+   * Disable loopback so you do not receive your localSockown datagrams.
    */
   {
     char loopch=0;
@@ -76,7 +78,6 @@ int main (int argc, char *argv[]) {
     perror("sending datagram message");
   }
 
-
   /*** TCP  ********************************************************/
   /*                                                                   */
   /* Component Name: TCPS                                              */
@@ -85,7 +86,6 @@ int main (int argc, char *argv[]) {
   /* Copyright:    Licensed Materials - Property of LA FAC             */
   /*** IBMCOPYR ********************************************************/
 
-   unsigned short port;       /* port client will connect to         */
    char buf[12];              /* data buffer for sending & receiving */
    struct hostent *hostnm;    /* server host name information        */
    struct sockaddr_in server; /* server address                      */
